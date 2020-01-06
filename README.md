@@ -6,11 +6,12 @@ A library of functions for generating longitudinal data
 This library creates has a suite of functions for generating synthetic longitudinal data (data that is self correlated over time). This package allows the user to finely control various temporal properties of the data, such as its stationarity, the type of relationship between the features and the outcome, the collinearity/auto-collinearity of the features, and others. The data is meant to resemble synchronous clinical data with differing numbers of measurements for a set of patients. This library uses a longitudinal random effects model as a data generating process. This is a hierarchical longitudinal regression equation with both global beta coefficients (fixed effects) and patient specific coefficients (random effects): https://en.wikipedia.org/wiki/Mixed_model.
 
 
-## Package Classes, Functions, and Parameters
+## Package Classes, Functions, and Parameters Definitions
 
-### long_data_set Class
+##Classes:
 
-#### init()
+
+#### long_data_set(n=2000,num_measurements=25,collinearity_bucket="low-low",trend_bucket="linear",sampling_bucket="random",sampling_function=None,b_colin=0.13,beta_var=1,time_importance_factor=5,sigma_e=0.05,num_features=2,num_extraneous_variables=0,link_fn="identity",num_piecewise_breaks=0,random_effects=["intercept","time","trend-time"],coefficient_values={})
 
 This initializes the class with the desired parameters. It gets the class ready to create data.
 
@@ -68,7 +69,7 @@ coefficient_values: you can specify a dictionary of coefficient values to create
 
 This function creates a data set based on the initialized parameters in long format and stores that data set as a Pandas data frame in the data_frame attribute of the class.
 
-#### export_to_csv()
+#### export_to_csv(path_name,file_name)
 
 This function exports the data frame saved in the data_frame attribute to a csv. It also creates a separate csv that describes the parameters used to create the data.
 
@@ -78,7 +79,7 @@ path_name: the directory where the csv's should be saved
 
 file_name: a descriptive name of the data set. Note that the data_frame csv will have "data_" prepended to this descriptive name and the model parameter csv will have "params_" prepended to this descriptive name.
 
-#### transform_variable_feature()
+#### transform_variable_feature(column_names,transformation_function)
 
 This function applies a custom function to transform a numeric feature or extraneous variable. This function does all the tedious work of unapplying the error and the link function as to update the values of the feature, extraneous variable, and, if needed, the outcome. This function will create new variables/features/outcome with "new_" prepended to the feature/variable name changed. If you want to apply multiple transformations, make sure you replace the outcome variable "y" with "new_y" from the first transformation before applying the second. I would strongly discourage applying transformations without use of this function, please refer to code to see why. This function is supported with num_piecewise_breaks > 0.
 
