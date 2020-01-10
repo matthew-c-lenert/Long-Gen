@@ -8,7 +8,7 @@ This library creates has a suite of functions for generating synthetic longitudi
 
 ## Package Classes, Functions, and Parameters Definitions
 
-##Classes:
+## Classes:
 
 
 #### long_data_set(n=2000,num_measurements=25,collinearity_bucket="low-low",trend_bucket="linear",sampling_bucket="random",sampling_function=None,b_colin=0.13,beta_var=1,time_importance_factor=5,sigma_e=0.05,num_features=2,num_extraneous_variables=0,link_fn="identity",num_piecewise_breaks=0,random_effects=["intercept","time","trend-time"],coefficient_values={})
@@ -91,4 +91,4 @@ transformation_function: this function should take a numpy array as an input and
 
 
 ## Citing this Package
-Please cite this package if used in research applications. Please cite with the following: Matthew C Lenert, Jeffrey Blume, Thomas Lasko, Michael Matheny, Asli Weitkamp, Colin G Walsh. "Deep Aion: Longitudinal Data Generator". https://github.com/matthew-c-lenert/Long-Gen.
+Please cite this package if used in research applications. Please cite with the following: Matthew C Lenert, Jeffrey Blume, Thomas Lasko, Michael Matheny, Asli Weitkamp, Colin G Walsh. "Deep Aion Project: Longitudinal Data Generator". https://github.com/matthew-c-lenert/Long-Gen.
