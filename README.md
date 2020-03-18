@@ -18,7 +18,7 @@ This initializes the class with the desired parameters. It gets the class ready 
 Parameters:
 n: the number of unique patients in the data set (integer). Default = 2000.
 
-num_measurements: the average number of measurements per patients. The number of measurement for a specific patient is drawn from a Poisson distribution with mean equal to the integer specified here (integer). Default = 25.
+num_measurements: the average number of measurements per patients. The number of measurement for a specific patient is drawn from a Pareto distribution with median roughly equal to the integer specified here (integer). Default = 25.
 
 collinearity_bucket: the level of correlation between different features and the level of autocorrelation of a feature with itself over time. Features are different draws from a Gaussian Process. Feature values are determined by the timing of the sample. The buckets represent different parameter sets for the Gaussian Process. Default is "low-low". Please specify one of the following buckets as a string:
    1. "low-low" : low collinearity(0.1-0.4), low autocorrelation (0.1-0.4)
@@ -46,6 +46,8 @@ b_colin: this parameter determines how collinear patient specific effects (rando
 
 beta_var: set the magnitude of feature and time coefficients. Larger numbers will result in larger feature and time effects. These effects are drawn from a normal distribution centered at 0. Please choose a number greater than 0. The default is 1.
 
+b_var: set the magnitude of the personalized offsets for the intercept and time coefficients. Larger numbers will result in larger inter-subject variability. These effects are drawn from a normal distribution centered at 0. Please choose a number greater than 0. The default is 1.
+
 time_importance_factor: Determine how relatively important the time coefficient should be compared to feature effects. Values above 1 will mean time should be more important and values less than 1 mean time should be less important. One will likely want to use this parameter if they are doing variable transforms later on. Please choose a number greater than 0. Default is 5.
 
 sigma_e: set the amount of observation error for each measurement of the outcome. Larger values mean larger amounts of unobserved measurement error. Smaller values mean more precise measurements. The distribution of the error is determined by the link function. We use the canonical error distributions for each link function and hold the variance of the error constant for each patient. Specify a number in [0,1). Default is 0.05.
@@ -65,6 +67,8 @@ num_piecewise_breaks: the number of times the global (fixed effect) coefficients
 random_effects: features that have patient specific values. These patient specific (random) effects determine the correlation structure of the outcome and create inter-subject variability. It is recommended that you at least specify ["intercept","time"] as random effects to cause the outcome to be correlated over time. Non-linear time components can have patient specific effects by adding "trend-time" to the list. You can give features a patient specific effect by adding them to the list like so: ["intercept","time","x1"]. Please specify a list of features and the intercept. Patient specific effects are normally distributed and centered at 0 as per standard assumptions of the random effects model. Default is ["intercept","time","trend-time"].
 
 coefficient_values: you can specify a dictionary of coefficient values to create a precise model. The dictionary should have the feature name as the key and the numeric coefficient as the value. You must give all features including "time", "trend-time", and "intercept" a value. This parameter should not be used without careful study of the underlying code. This parameter is not supported with num_piecewise_breaks > 0. The default is {}.
+
+time_breaks: you can specify where you wish piecewise breaks to occur in the interval (0,1). If time_breaks is left empty while the num_piecewise_breaks > 0, then the location of the piecewise breaks will be selected at random over the (0,1) interval. If the list is not empty, then the list size must be equal to the number of piecewise breaks. The default is [].
 
 #### create_data_set()
 
