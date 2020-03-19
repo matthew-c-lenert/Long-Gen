@@ -220,7 +220,7 @@ class patient:
         if measurements<1:
             self.measure_count=1
         else:
-            self.measure_count=measurements
+            self.measure_count=int(measurements)
         obs_error=[]
         if link_fn=="identity":
             obs_error=np.random.normal(0,self.sigma_e,self.measure_count)
@@ -235,11 +235,25 @@ class patient:
 
         feature_values={}
         extraneous_variable_values={}
+        b_factor=0
+
+        if len(self.b_values) > 0:
+            if "intercept" in self.b_values:
+                b_factor=self.b_values["intercept"]
+            elif "time" in self.b_values:
+                b_factor=self.b_values["time"]
+            elif "trend-time" in self.b_values:
+                b_factor=self.b_values["trend-time"]
+            else:
+                for b in b_values:
+                    b_factor=self.b_values[b]
+                    break
+
         if (sampling_bucket=="not-random") | (sampling_bucket=="custom-feature-values"):
             total_length=len(features)+len(extraneous_variables)
             x_cov_matrix=np.ones((total_length,total_length))
             np.fill_diagonal(x_cov_matrix,colinearity[2])
-            x=np.random.multivariate_normal(tuple(np.zeros(total_length)), x_cov_matrix, self.measure_count)
+            x=np.random.multivariate_normal(tuple(np.ones(total_length)*b_factor), x_cov_matrix, self.measure_count)
             index=0
             for feature in features:
                 feature_values[feature]=x[:,index]
@@ -252,7 +266,7 @@ class patient:
         time_points=np.sort(time_points)
 
         if sampling_bucket!="not-random":
-            kernel=1.0 * Matern(length_scale=colinearity[0], length_scale_bounds=(1e-5, 1e5), nu=colinearity[1])
+            kernel=(1.0+np.abs(b_factor)) * Matern(length_scale=colinearity[0], length_scale_bounds=(1e-5, 1e5), nu=colinearity[1])
             gp = GaussianProcessRegressor(kernel=kernel)
             y_samples = gp.sample_y(time_points[:, np.newaxis],len(features))
             index=0
@@ -336,14 +350,14 @@ class long_data_set:
 
     def create_data_set(self):
         if len(self.time_breaks)>0:
-            if len(self.time_breaks)!=num_piecewise_breaks:
+            if len(self.time_breaks)!=self.num_piecewise_breaks:
                 raise ValueError('Number of specific time_breaks do not match num_piecewise_breaks')
             else:
                 self.change_points=np.sort(self.time_breaks)
         else:
             self.change_points=np.sort(get_stationarity_change_points(self.num_piecewise_breaks))
         measures=pareto.rvs(3.5, loc=self.num_measurements-self.num_measurements/10, scale=2.5, size=self.num_of_patients, random_state=None)
-        measures=np.round(measures,0)
+        measures=np.sort(np.round(measures,0))
 
         ro_x=get_colinearity(self.colinearity_bucket,self.num_of_patients)
         b_cov_matrix=np.zeros((len(self.random_effects),len(self.random_effects)))
@@ -355,6 +369,21 @@ class long_data_set:
         for effect in self.random_effects:
             self.b_dict[effect]=b[:,b_index]
             b_index+=1
+        b_df=pd.DataFrame(self.b_dict)
+        if len(self.random_effects) > 0:
+            if "intercept" in self.b_dict:
+                b_df['sort_col']=b_df["intercept"].abs()
+            elif "time" in self.b_dict:
+                b_df['sort_col']=b_df["time"].abs()
+            elif "trend-time" in self.b_dict:
+                b_df['sort_col']=b_df["trend-time"].abs()
+            else:
+                sort_col=b_df.columns.values[0]
+                b_df['sort_col']=b_df[sort_col].abs()
+            b_df=b_df.sort_values(by=['sort_col'])
+            b_df=b_df.reset_index(drop=True)
+        for effect in self.random_effects:
+            self.b_dict[effect]=b_df[effect].values
 
         long_data=[]
         first=True
@@ -464,3 +493,4 @@ class long_data_set:
 
         else:
             self.data_frame["new_y"]=self.data_frame["new_y"]+self.data_frame["unobserved_error"]
+
