@@ -39,13 +39,12 @@ def piecewise_sample(stationarity_change_points,is_high,index,max_index):
     return(np.random.uniform(low=low, high=high))
 
 
-def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_function=None):
+def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_param=None,sampling_function=None):
     if bucket == "equal":
         return(np.linspace(0,0.99999,measurment_occaisons))
     elif bucket == "random":
         return(np.random.uniform(low=0.0, high=1.0, size=measurment_occaisons))
     elif bucket == "not-random":
-        step_size=(0.99999/(measurment_occaisons-1))*np.ones(measurment_occaisons)
         abnormal_x={}
         either=[]
         first=True
@@ -58,6 +57,8 @@ def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_functio
                 either=either+ab_x
         neither=np.logical_not(either)
 
+        precent_ab=np.sum(either)/measurment_occaisons
+        step_size=((0.5+0.5*precent_ab)/(measurment_occaisons-1))*np.ones(measurment_occaisons)
 
         for feature in feature_values:
             abnormal_x[feature]=(step_size/np.abs(feature_values[feature]))*either
@@ -65,19 +66,6 @@ def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_functio
 
         neither=np.insert(neither,0,False)[0:-1]
         return(np.cumsum(step_size*neither+np.minimum.reduce([abnormal_x[x] for x in abnormal_x])))
-    elif bucket == "beta-not-random":
-        alpha=0.5
-        beta=0.5
-        half_way=round(len(feature_values)/2,0)
-        counter=1
-        for feature in feature_values:
-            if counter<=half_way:
-                alpha+=np.mean(feature_values[feature])
-            else:
-                beta+=np.mean(feature_values[feature])
-            counter+=1
-        times=np.random.beta(alpha,beta, size=measurment_occaisons)
-        return(np.fromiter((random_offset(xi) for xi in times), times.dtype,times.shape[0]))
     elif bucket == "custom-no-features":
         return(sampling_function(measurment_occaisons))
     elif bucket == "custom-feature-values":
@@ -265,7 +253,7 @@ class patient:
         time_points=get_sample_times(sampling_bucket,self.measure_count,feature_values,sampling_function)
         time_points=np.sort(time_points)
 
-        if sampling_bucket!="not-random":
+        if (sampling_bucket!="not-random") & (sampling_bucket!="custom-feature-values"):
             kernel=(1.0+np.abs(b_factor)) * Matern(length_scale=colinearity[0], length_scale_bounds=(1e-5, 1e5), nu=colinearity[1])
             gp = GaussianProcessRegressor(kernel=kernel)
             y_samples = gp.sample_y(time_points[:, np.newaxis],len(features))
