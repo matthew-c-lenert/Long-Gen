@@ -38,6 +38,14 @@ def piecewise_sample(stationarity_change_points,is_high,index,max_index):
             high=stationarity_change_points[index+1]
     return(np.random.uniform(low=low, high=high))
 
+def normalize_adjustment(feature_values):
+    mod_vals=np.ceil(feature_values)
+    vals2=(feature_values==2)*1.1
+    vals3=(feature_values==3)*1.25
+    vals4=(feature_values>3)*1.5
+    return(vals2+vals3+vals4)
+
+
 
 def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_param=None,sampling_function=None):
     if bucket == "equal":
@@ -61,7 +69,7 @@ def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_param=N
         step_size=((0.5+0.5*precent_ab)/(measurment_occaisons-1))*np.ones(measurment_occaisons)
 
         for feature in feature_values:
-            abnormal_x[feature]=(step_size/np.abs(feature_values[feature]))*either
+            abnormal_x[feature]=(step_size/normalize_adjustment(np.abs(feature_values[feature])))*either
             abnormal_x[feature]=np.insert(abnormal_x[feature],0,0)[0:-1]
 
         neither=np.insert(neither,0,False)[0:-1]
