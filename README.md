@@ -69,6 +69,8 @@ coefficient_values: you can specify a dictionary of coefficient values to create
 
 time_breaks: you can specify where you wish piecewise breaks to occur in the interval (0,1). If time_breaks is left empty while the num_piecewise_breaks > 0, then the location of the piecewise breaks will be selected at random over the (0,1) interval. If the list is not empty, then the list size must be equal to the number of piecewise breaks. The default is [].
 
+probability_threshold: set a threshold to determine cases and controls when the Logit link function is in use. Probabilities above the threshold will be cases and below will be controls. If no threshold is set, then the cases and controls will be determined by their probability, eg., an observation with a 20% probability will be a case 20% of the time. The default is None.
+
 #### create_data_set()
 
 This function creates a data set based on the initialized parameters in long format and stores that data set as a Pandas data frame in the data_frame attribute of the class.

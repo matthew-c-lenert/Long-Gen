@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(name='long_gen',
-      version='0.1.12',
+      version='0.1.16',
       description='A library of functions for generating longitudinal data',
       classifiers=[
         'Development Status :: 4 - Beta',
