@@ -40,10 +40,11 @@ def piecewise_sample(stationarity_change_points,is_high,index,max_index):
 
 def normalize_adjustment(feature_values):
     mod_vals=np.ceil(feature_values)
-    vals2=(feature_values==2)*1.1
-    vals3=(feature_values==3)*1.25
-    vals4=(feature_values>3)*1.5
-    return(vals2+vals3+vals4)
+    vals=(mod_vals==1)
+    vals2=(mod_vals==2)*1.1
+    vals3=(mod_vals==3)*1.25
+    vals4=(mod_vals>3)*1.5
+    return(vals+vals2+vals3+vals4)
 
 
 
@@ -127,14 +128,17 @@ def get_stationarity_change_points(stationarity_count):
     return(np.random.uniform(low=0.0, high=1.0, size=stationarity_count))
 
 
-def binary_y(arr_y):
-    draw=np.random.uniform(0,1,arr_y.size)
-    return((draw<=arr_y).astype(int))
+def binary_y(arr_y,probability_threshold):
+    if probability_threshold==None:
+        draw=np.random.uniform(0,1,arr_y.size)
+        return((draw<=arr_y).astype(int))
+    else:
+        return((probability_threshold<=arr_y).astype(int))
 
 
 class patient_model():
 
-    def __init__(self,period_index,b_values,coefficient_values,link_fn,obs_error,times,first_obs_index,relative_time,period_features,period_extraneous_variables,stationarity_trend_bucket):
+    def __init__(self,period_index,b_values,coefficient_values,link_fn,obs_error,times,first_obs_index,relative_time,period_features,period_extraneous_variables,stationarity_trend_bucket,probability_threshold):
         self.b_values={}
         self.coefficient_values={}
         for b in b_values:
@@ -152,6 +156,7 @@ class patient_model():
         self.obs_error=obs_error
         self.relative_time=relative_time
         self.stationarity_trend_bucket=stationarity_trend_bucket
+        self.probability_threshold=probability_threshold
 
     def generate_data(self):
         y=np.ones(self.num_obs)*self.coefficient_values["intercept"]
@@ -183,7 +188,7 @@ class patient_model():
             self.y=np.exp(y)+self.obs_error
         elif self.link_fn=="logit":
             self.y_prob=np.maximum(expit(y),self.obs_error)
-            self.y=binary_y(self.y_prob)
+            self.y=binary_y(self.y_prob,self.probability_threshold)
         elif self.link_fn=="inverse":
             self.y=np.power(y,-1)+self.obs_error
 
@@ -206,7 +211,7 @@ class patient_model():
 
 class patient:
 
-    def __init__(self,pat_id,b_values,features,coefficient_values,extraneous_variables,colinearity,stationarity_change_points,measurements,sampling_bucket,link_fn,sigma_e,stationarity_trend_bucket,sampling_function=None):
+    def __init__(self,pat_id,b_values,features,coefficient_values,extraneous_variables,colinearity,stationarity_change_points,measurements,sampling_bucket,link_fn,sigma_e,stationarity_trend_bucket,sampling_function,probability_threshold):
         self.b_values=b_values
         self.id=pat_id
         self.coefficient_values=coefficient_values
@@ -293,7 +298,7 @@ class patient:
             for variable in extraneous_variable_values:
                 period_extraneous_variables[variable]=extraneous_variable_values[variable][key]
 
-            self.models.append(patient_model(period_index,self.b_values,self.coefficient_values,link_fn,np.array(obs_error[key]),sorted_times[key],obs_index,relative_time[key],period_features,period_extraneous_variables,stationarity_trend_bucket))
+            self.models.append(patient_model(period_index,self.b_values,self.coefficient_values,link_fn,np.array(obs_error[key]),sorted_times[key],obs_index,relative_time[key],period_features,period_extraneous_variables,stationarity_trend_bucket,probability_threshold))
             period_index+=1
             obs_index+=len(sorted_times[key])
 
@@ -316,7 +321,7 @@ class patient:
 
 class long_data_set:
 
-    def __init__(self,n=2000,num_measurements=25,collinearity_bucket="low-low",trend_bucket="linear",sampling_bucket="random",sampling_function=None,b_colin=0.13,beta_var=1,b_var=1,time_importance_factor=3,sigma_e=0.05,num_features=2,num_extraneous_variables=0,link_fn="identity",num_piecewise_breaks=0,random_effects=["intercept","time","trend-time"],coefficient_values={},time_breaks=[]):
+    def __init__(self,n=2000,num_measurements=25,collinearity_bucket="low-low",trend_bucket="linear",sampling_bucket="random",sampling_function=None,b_colin=0.13,beta_var=1,b_var=1,time_importance_factor=3,sigma_e=0.05,num_features=2,num_extraneous_variables=0,link_fn="identity",num_piecewise_breaks=0,random_effects=["intercept","time","trend-time"],coefficient_values={},time_breaks=[],probability_threshold=None):
         self.num_of_patients=n
         self.num_measurements=num_measurements
         self.colinearity_bucket=collinearity_bucket
@@ -332,6 +337,7 @@ class long_data_set:
         self.sampling_function=sampling_function
         ###############################
         self.features=[]
+        self.probability_threshold=probability_threshold
         for i in range(num_features):
             self.features.append("x"+str(i+1))
 
@@ -403,7 +409,7 @@ class long_data_set:
             b_values={}
             for b in self.b_dict:
                 b_values[b]=self.b_dict[b][p_id]
-            pat=patient(p_id,b_values,self.features,self.coefficient_values,self.extraneous_variables,ro_x,self.change_points,measures[p_id],self.sampling_bucket,self.link_fn,self.sigma_e,self.stationarity_trend_bucket,self.sampling_function)
+            pat=patient(p_id,b_values,self.features,self.coefficient_values,self.extraneous_variables,ro_x,self.change_points,measures[p_id],self.sampling_bucket,self.link_fn,self.sigma_e,self.stationarity_trend_bucket,self.sampling_function,self.probability_threshold)
             if first:
                 first=False
                 long_data=pat.export_to_data_frame()
@@ -417,9 +423,9 @@ class long_data_set:
         self.data_frame.to_csv(path_name+"data_"+file_name+".csv")
         param_values={"piecewise_shifts":np.append(self.change_points,[1]),"cons_":self.coefficient_values["intercept"],"time_linear":self.coefficient_values["time"]}
         if self.stationarity_trend_bucket=="quadratic":
-            param_values["cos_time"]=self.coefficient_values["trend-time"]
-        elif self.stationarity_trend_bucket=="seasonal":
             param_values["sqrt_time"]=self.coefficient_values["trend-time"]
+        elif self.stationarity_trend_bucket=="seasonal":
+            param_values["cos_time"]=self.coefficient_values["trend-time"]
         for feature in self.features:
             param_values[feature]=self.coefficient_values[feature]
 
