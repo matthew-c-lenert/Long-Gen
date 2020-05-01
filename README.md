@@ -18,7 +18,15 @@ This initializes the class with the desired parameters. It gets the class ready 
 Parameters:
 n: the number of unique patients in the data set (integer). Default = 2000.
 
-num_measurements: the average number of measurements per patients. The number of measurement for a specific patient is drawn from a Pareto distribution with median roughly equal to the integer specified here (integer). Default = 25.
+measurement_distribution: the distribution of the number of observations per patient. Acceptable choices are:
+1. "equal" (all patients have the same number of observations, specify number of observation as {"loc":#} in measurement_parameters)
+2. "poisson" (observations follow poisson distribution, specify the mean number of observations as {"loc":#} in measurement_parameters)
+3. "normal" (number of observations follows Gaussian distribution, specify mean and scale as {"loc":#,"scale":#} in measurement_parameters)
+4. "log-normal" (number of observations follows log(Gaussian) distribution, specify mean and scale as {"loc":#,"scale":#} in measurement_parameters, shape is fixed at 0.75)
+5. "gamma" (number of observations follows gamma distribution, specify shape and scale as {"loc":#,"scale":#} in measurement_parameters)
+The default is "log-normal" as clinical data tend to have this kind of skew.
+
+measurement_parameters: specify the form of the measurement distribution with a dictionary. Always include the "loc" entry with the desired mean value of observations, and use "scale" as needed depending on the distribution. Default is {"loc":25,"scale":5}.
 
 collinearity_bucket: the level of correlation between different features and the level of autocorrelation of a feature with itself over time. Features are different draws from a Gaussian Process. Feature values are determined by the timing of the sample. The buckets represent different parameter sets for the Gaussian Process. Default is "low-low". Please specify one of the following buckets as a string:
    1. "low-low" : low collinearity(0.1-0.4), low autocorrelation (0.1-0.4)
@@ -35,9 +43,9 @@ trend_bucket: The type of trend over time in the outcome variable. Default is "l
 sampling_bucket: the type of sampling scheme used to determine the timing of measurements. Default is "random". Please specify one of the following buckets:
    1. "equal" : the timing of measurements are equally spaced across the time interval (0,1). You can use the transform function discussed later to change the time interval to one of your choosing.
    2. "random" : the timing of measurements are uniformly randomly drawn across the interval from (0,1).
-   3. "not-random": the timing of measurements start off equally spaced across the time interval (0,0.5). Any abnormal observation (greater than 1 or less than -1) in the feature set will cause the sampling frequency to increase proportional to the extremeness of the feature value until all features return to the normal range. If there are multiple values out of normal range, then the sampling frequency is increased proportional to the most extreme value. The increase in sampling frequency occurs after the abnormal observation(s). The number of abnormal features are correlated with the total number of measurements and the length of the sampling period. For example, if all measurements are abnormal the sampling period extends to (0,1).
-   4. "custom-no-features" : specify your own function to determine the timing of samples. This function should take the number of measurements (integer) as a parameter and should output a numpy array of numeric sample times of size equal to the parameter. Features will be created via Gaussian Process.
-   5. "custom-feature-values" : specify your own function to determine the timing of samples. This function should take two parameters: 1st: the number of measurements, 2nd a dictionary of numpy arrays with the feature values. This function should output a numpy array of size equal to the number of measurements. Features will be created via a correlated multivariate normal distribution (no autocorrelation).
+   3. "not-random": the timing of measurements start off equally spaced across the time interval (0,0.1). Any abnormal observation (greater than 1 or less than -1) in the feature set will cause the sampling frequency to increase proportional to the extremeness of the feature value until all features return to the normal range. If there are multiple values out of normal range, then the sampling frequency is increased proportional to the most extreme value. The increase in sampling frequency occurs after the abnormal observation(s). The number of abnormal feature measurements are correlated with the total number of measurements and the length of the sampling period. (More abnormals = longer length and more measurements, but a smaller sampling period between measurements).
+   4. "custom-no-features" : specify your own function to determine the timing of samples. This function should take: 1. the number of measurements (integer) as a parameter, 2. an optimized weight to scale the time period (float [0,1]), and 3. the maximum number of measurements (integer) and should output a numpy array of numeric sample times of size equal to the number of measurements. Features will be created via Gaussian Process.
+   5. "custom-feature-values" : specify your own function to determine the timing of samples. This function should take two parameters: 1st: the number of measurements, 2nd a dictionary of numpy arrays with the feature values, 3rd an optimized weight to scale the time period (float [0,1]), 4th the maximum number of measurements (integer). This function should output a numpy array of size equal to the number of measurements. Features will be created via a correlated multivariate normal distribution (no autocorrelation).
 
 sampling_function: if using a custom sampling function please specify it here. Default is None. Please remember to also set the sampling_bucket parameter to either "custom-no-features" or "custom-feature-values".
 
@@ -70,6 +78,17 @@ coefficient_values: you can specify a dictionary of coefficient values to create
 time_breaks: you can specify where you wish piecewise breaks to occur in the interval (0,1). If time_breaks is left empty while the num_piecewise_breaks > 0, then the location of the piecewise breaks will be selected at random over the (0,1) interval. If the list is not empty, then the list size must be equal to the number of piecewise breaks. The default is [].
 
 probability_threshold: set a threshold to determine cases and controls when the Logit link function is in use. Probabilities above the threshold will be cases and below will be controls. If no threshold is set, then the cases and controls will be determined by their probability, eg., an observation with a 20% probability will be a case 20% of the time. The default is None.
+
+random_effects_links: a list of consequences the unobserved random effects can have on the generating model, if desired. We used these latent effects to symbolize severity of illness or baseline risk, where subjects with random effects deviating farther away from 0 are considered sicker than those with effects closer to 0. This paradigm could also be turned on its head for a survival framework, where more extreme random effects could represent healthier patients. Random effects can influence the generating model in 3 ways:
+"measurements": Adding "measurements" to the list will cause the number of measurements per patient to be correlated with a random effect. Use the percentile_sort_cutoff and percentile_sub to manipulate this correlation.
+"features": Adding "features" to the list will cause the observed feature values over time to be correlated with a random effect. Patients with more extreme (deviation from 0) random effects will also have more extreme feature values.
+"timespan": Adding "timespan" to the list will cause patients with more extreme feature values to have a larger measurement window (the span of time that observations occur). This can stand in for longer lengths of stay or observation periods.
+The default is ["measurements","features","timespan"].
+
+percentile_sort_cutoff: this cutoff allows the user to change the measurement assignment of large positive patient specific parameter values. Generally this kind of patient specific parameters values would get the largest number of measurements. However, this may not always be desired, for example, if the patient specific parameter signifies mortality risk, extreme patients on this end of the spectrum may die sooner (with fewer measurements) than other patients. Default = 1, no change to measurement assignment. This parameter should be between 0 and 1.
+
+percentile_sub: this parameter specifies approximately where in the measurement distribution to shuffle patients with random_effects above the percentile_sort_cutoff. For example, they can recieve the fewest measurements by setting this to 0, or to the middle (0.5). This parameter should be between 0 and 1.
+
 
 #### create_data_set()
 
