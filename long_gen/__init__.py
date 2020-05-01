@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import expit
 from scipy.special import logit
-from scipy.stats import pareto
+from scipy.stats import lognorm
 from itertools import product
 import sys
 from operator import mul
@@ -48,11 +48,11 @@ def normalize_adjustment(feature_values):
 
 
 
-def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_param=None,sampling_function=None):
+def get_sample_times(bucket,measurment_occaisons,feature_values,abnormal_ratio,measure_max,sampling_function=None):
     if bucket == "equal":
-        return(np.linspace(0,0.99999,measurment_occaisons))
+        return(np.linspace(0,((0.9999-abnormal_ratio)+abnormal_ratio*(measurment_occaisons/measure_max)),measurment_occaisons))
     elif bucket == "random":
-        return(np.random.uniform(low=0.0, high=1.0, size=measurment_occaisons))
+        return(np.random.uniform(low=0.0, high=((1-abnormal_ratio)+abnormal_ratio*(measurment_occaisons/measure_max)), size=measurment_occaisons))
     elif bucket == "not-random":
         abnormal_x={}
         either=[]
@@ -67,7 +67,8 @@ def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_param=N
         neither=np.logical_not(either)
 
         precent_ab=np.sum(either)/measurment_occaisons
-        step_size=((0.5+0.5*precent_ab)/(measurment_occaisons-1))*np.ones(measurment_occaisons)
+
+        step_size=(((1-abnormal_ratio)+abnormal_ratio*precent_ab*(measurment_occaisons/measure_max))/(measurment_occaisons-1))*np.ones(measurment_occaisons)
 
         for feature in feature_values:
             abnormal_x[feature]=(step_size/normalize_adjustment(np.abs(feature_values[feature])))*either
@@ -76,9 +77,9 @@ def get_sample_times(bucket,measurment_occaisons,feature_values,sampling_param=N
         neither=np.insert(neither,0,False)[0:-1]
         return(np.cumsum(step_size*neither+np.minimum.reduce([abnormal_x[x] for x in abnormal_x])))
     elif bucket == "custom-no-features":
-        return(sampling_function(measurment_occaisons))
+        return(sampling_function(measurment_occaisons,abnormal_ratio,measure_max))
     elif bucket == "custom-feature-values":
-        return(sampling_function(measurment_occaisons,feature_values))
+        return(sampling_function(measurment_occaisons,feature_values,abnormal_ratio,measure_max))
 
 
 def split_between_cutpoints(times,entity_to_split,stationarity_change_points):
@@ -134,6 +135,13 @@ def binary_y(arr_y,probability_threshold):
         return((draw<=arr_y).astype(int))
     else:
         return((probability_threshold<=arr_y).astype(int))
+
+
+def data_sorter(b_value,quantile_cutoff,quantile_sub,b_var):
+    if b_value>quantile_cutoff:
+        return(quantile_sub+np.random.uniform(-1*np.sqrt(b_var)/10,np.sqrt(b_var)/10))
+    else:
+        return(np.abs(b_value))
 
 
 class patient_model():
@@ -211,7 +219,9 @@ class patient_model():
 
 class patient:
 
-    def __init__(self,pat_id,b_values,features,coefficient_values,extraneous_variables,colinearity,stationarity_change_points,measurements,sampling_bucket,link_fn,sigma_e,stationarity_trend_bucket,sampling_function,probability_threshold):
+    def __init__(self,pat_id,b_values,features,coefficient_values,extraneous_variables,colinearity,stationarity_change_points
+        ,measurements,sampling_bucket,link_fn,sigma_e,stationarity_trend_bucket,sampling_function,probability_threshold
+        ,abnormal_ratio,measure_max,random_effects_links):
         self.b_values=b_values
         self.id=pat_id
         self.coefficient_values=coefficient_values
@@ -237,18 +247,18 @@ class patient:
         feature_values={}
         extraneous_variable_values={}
         b_factor=0
-
-        if len(self.b_values) > 0:
-            if "intercept" in self.b_values:
-                b_factor=self.b_values["intercept"]
-            elif "time" in self.b_values:
-                b_factor=self.b_values["time"]
-            elif "trend-time" in self.b_values:
-                b_factor=self.b_values["trend-time"]
-            else:
-                for b in b_values:
-                    b_factor=self.b_values[b]
-                    break
+        if "features" in random_effects_links:
+            if len(self.b_values) > 0:
+                if "intercept" in self.b_values:
+                    b_factor=self.b_values["intercept"]
+                elif "time" in self.b_values:
+                    b_factor=self.b_values["time"]
+                elif "trend-time" in self.b_values:
+                    b_factor=self.b_values["trend-time"]
+                else:
+                    for b in b_values:
+                        b_factor=self.b_values[b]
+                        break
 
         if (sampling_bucket=="not-random") | (sampling_bucket=="custom-feature-values"):
             total_length=len(features)+len(extraneous_variables)
@@ -263,7 +273,7 @@ class patient:
             for variable in extraneous_variables:
                 extraneous_variable_values[variable]=x[:,index]
                 index+=1
-        time_points=get_sample_times(sampling_bucket,self.measure_count,feature_values,sampling_function)
+        time_points=get_sample_times(sampling_bucket,self.measure_count,feature_values,abnormal_ratio,measure_max,sampling_function)
         time_points=np.sort(time_points)
 
         if (sampling_bucket!="not-random") & (sampling_bucket!="custom-feature-values"):
@@ -321,8 +331,13 @@ class patient:
 
 class long_data_set:
 
-    def __init__(self,n=2000,num_measurements=25,collinearity_bucket="low-low",trend_bucket="linear",sampling_bucket="random",sampling_function=None,b_colin=0.13,beta_var=1,b_var=1,time_importance_factor=3,sigma_e=0.05,num_features=2,num_extraneous_variables=0,link_fn="identity",num_piecewise_breaks=0,random_effects=["intercept","time","trend-time"],coefficient_values={},time_breaks=[],probability_threshold=None):
+    def __init__(self,n=2000,measurement_distribution="log-normal",measurement_parameters={"loc":25,"scale":5},collinearity_bucket="low-low",trend_bucket="linear",sampling_bucket="random"
+        ,sampling_function=None,b_colin=0.13,beta_var=1,b_var=1,time_importance_factor=3,sigma_e=0.05,num_features=2,num_extraneous_variables=0,link_fn="identity",num_piecewise_breaks=0
+        ,random_effects=["intercept","time","trend-time"],coefficient_values={},time_breaks=[],probability_threshold=None,random_effects_links=["timespan","features","measurements"]
+        ,percentile_sort_cutoff=1,percentile_sub=1):
         self.num_of_patients=n
+        self.measurement_distribution=measurement_distribution
+        self.measurement_parameters=measurement_parameters
         self.num_measurements=num_measurements
         self.colinearity_bucket=collinearity_bucket
         self.stationarity_trend_bucket=trend_bucket
@@ -335,6 +350,9 @@ class long_data_set:
         self.b_colin=b_colin
         self.sigma_e=sigma_e
         self.sampling_function=sampling_function
+        self.percentile_sort_cutoff=percentile_sort_cutoff
+        self.percentile_sub=percentile_sub
+        self.random_effects_links=random_effects_links
         ###############################
         self.features=[]
         self.probability_threshold=probability_threshold
@@ -358,8 +376,20 @@ class long_data_set:
                 self.change_points=np.sort(self.time_breaks)
         else:
             self.change_points=np.sort(get_stationarity_change_points(self.num_piecewise_breaks))
-        measures=pareto.rvs(3.5, loc=self.num_measurements-self.num_measurements/10, scale=2.5, size=self.num_of_patients, random_state=None)
-        measures=np.sort(np.round(measures,0))
+        measures=[]
+        if self.measurement_distribution=="equal":
+            measures=np.ones(self.num_of_patients)*self.measurement_parameters['loc']
+        elif self.measurement_distribution=="poisson":
+            measures=np.random.poisson(lam=self.measurement_parameters['loc'], size=self.num_of_patients)
+        elif self.measurement_distribution=="normal":
+            measures=np.random.normal(loc=self.measurement_parameters['loc'], scale=self.measurement_parameters['scale'], size=self.num_of_patients)
+            measures=np.sort(np.round(measures,0))
+        elif self.measurement_distribution=="log-normal":
+            measures=lognorm.rvs(0.75,loc=self.measurement_parameters['loc'], scale=self.measurement_parameters['scale'], size=self.num_of_patients, random_state=None)
+            measures=np.sort(np.round(measures,0))
+        elif self.measurement_distribution=="gamma":
+            measures=np.random.gamma(shape=self.measurement_parameters['loc'], scale=self.measurement_parameters['scale'], size=self.num_of_patients)
+            measures=np.sort(np.round(measures,0))
 
         ro_x=get_colinearity(self.colinearity_bucket,self.num_of_patients)
         b_cov_matrix=np.zeros((len(self.random_effects),len(self.random_effects)))
@@ -371,21 +401,31 @@ class long_data_set:
         for effect in self.random_effects:
             self.b_dict[effect]=b[:,b_index]
             b_index+=1
-        b_df=pd.DataFrame(self.b_dict)
-        if len(self.random_effects) > 0:
-            if "intercept" in self.b_dict:
-                b_df['sort_col']=b_df["intercept"].abs()
-            elif "time" in self.b_dict:
-                b_df['sort_col']=b_df["time"].abs()
-            elif "trend-time" in self.b_dict:
-                b_df['sort_col']=b_df["trend-time"].abs()
-            else:
-                sort_col=b_df.columns.values[0]
-                b_df['sort_col']=b_df[sort_col].abs()
-            b_df=b_df.sort_values(by=['sort_col'])
-            b_df=b_df.reset_index(drop=True)
-        for effect in self.random_effects:
-            self.b_dict[effect]=b_df[effect].values
+        if "measurements" in self.random_effects_links:
+            b_df=pd.DataFrame(self.b_dict)
+            if len(self.random_effects) > 0:
+                if "intercept" in self.b_dict:
+                    cut_off=np.quantile(b_df["intercept"],self.percentile_sort_cutoff)
+                    sub_value=np.quantile(b_df["intercept"].abs(),self.percentile_sub)
+                    b_df['sort_col']=b_df["intercept"].apply(lambda v: data_sorter(v,cut_off,sub_value,self.b_var))
+                elif "time" in self.b_dict:
+                    cut_off=np.quantile(b_df["time"],self.percentile_sort_cutoff)
+                    sub_value=np.quantile(b_df["time"].abs(),self.percentile_sub)
+                    b_df['sort_col']=b_df["time"].apply(lambda v: data_sorter(v,cut_off,sub_value,self.b_var))
+                elif "trend-time" in self.b_dict:
+                    cut_off=np.quantile(b_df["trend-time"],self.percentile_sort_cutoff)
+                    sub_value=np.quantile(b_df["trend-time"].abs(),self.percentile_sub)
+                    b_df['sort_col']=b_df["trend-time"].apply(lambda v: data_sorter(v,cut_off,sub_value,self.b_var))
+                else:
+                    sort_col=b_df.columns.values[0]
+                    cut_off=np.quantile(sort_col,self.percentile_sort_cutoff)
+                    b_df['sort_col']=b_df[sort_col]
+                    sub_value=np.quantile(b_df['sort_col'].abs(),self.percentile_sub)
+                    b_df['sort_col']=b_df["sort_col"].apply(lambda v: data_sorter(v,cut_off,sub_value,self.b_var))
+                b_df=b_df.sort_values(by=['sort_col'])
+                b_df=b_df.reset_index(drop=True)
+            for effect in self.random_effects:
+                self.b_dict[effect]=b_df[effect].values
 
         long_data=[]
         first=True
@@ -405,11 +445,27 @@ class long_data_set:
                     else:
                         self.coefficient_values[feature][i]=np.random.normal(self.coefficient_values[feature][i-1],self.beta_var)
 
+        abnormal_ratio=0
+        if "timespan" in self.random_effects_links:
+            for i in range(19):
+                ratio=1.0/float(i+2)
+                min_step=(1.0-ratio)/(np.min(measures)-1)
+                ab_step=0.91/(np.max(measures)-1)
+                if min_step > (ab_step):
+                    if ratio > abnormal_ratio:
+                        abnormal_ratio=ratio
+                ratio=1.0-(1.0/float(i+2))
+                ab_step=0.91/(np.max(measures)-1)
+                if min_step > ab_step:
+                    if ratio > abnormal_ratio:
+                        abnormal_ratio=ratio
+        self.abnormal_ratio=abnormal_ratio
+
         for p_id in range(self.num_of_patients):
             b_values={}
             for b in self.b_dict:
                 b_values[b]=self.b_dict[b][p_id]
-            pat=patient(p_id,b_values,self.features,self.coefficient_values,self.extraneous_variables,ro_x,self.change_points,measures[p_id],self.sampling_bucket,self.link_fn,self.sigma_e,self.stationarity_trend_bucket,self.sampling_function,self.probability_threshold)
+            pat=patient(p_id,b_values,self.features,self.coefficient_values,self.extraneous_variables,ro_x,self.change_points,measures[p_id],self.sampling_bucket,self.link_fn,self.sigma_e,self.stationarity_trend_bucket,self.sampling_function,self.probability_threshold,abnormal_ratio,np.max(measures),self.random_effects_links)
             if first:
                 first=False
                 long_data=pat.export_to_data_frame()
