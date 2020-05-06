@@ -338,7 +338,6 @@ class long_data_set:
         self.num_of_patients=n
         self.measurement_distribution=measurement_distribution
         self.measurement_parameters=measurement_parameters
-        self.num_measurements=num_measurements
         self.colinearity_bucket=collinearity_bucket
         self.stationarity_trend_bucket=trend_bucket
         self.num_piecewise_breaks=num_piecewise_breaks
@@ -381,6 +380,7 @@ class long_data_set:
             measures=np.ones(self.num_of_patients)*self.measurement_parameters['loc']
         elif self.measurement_distribution=="poisson":
             measures=np.random.poisson(lam=self.measurement_parameters['loc'], size=self.num_of_patients)
+            measures=np.sort(measures)
         elif self.measurement_distribution=="normal":
             measures=np.random.normal(loc=self.measurement_parameters['loc'], scale=self.measurement_parameters['scale'], size=self.num_of_patients)
             measures=np.sort(np.round(measures,0))
