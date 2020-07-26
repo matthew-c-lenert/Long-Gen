@@ -262,8 +262,8 @@ class patient:
 
         if (sampling_bucket=="not-random") | (sampling_bucket=="custom-feature-values"):
             total_length=len(features)+len(extraneous_variables)
-            x_cov_matrix=np.ones((total_length,total_length))
-            np.fill_diagonal(x_cov_matrix,colinearity[2])
+            x_cov_matrix=np.ones((total_length,total_length))*colinearity[2]
+            np.fill_diagonal(x_cov_matrix,1)
             x=np.random.multivariate_normal(tuple(np.ones(total_length)*b_factor), x_cov_matrix, self.measure_count)
             index=0
             for feature in features:
